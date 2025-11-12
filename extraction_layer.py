@@ -41,7 +41,7 @@ def lambda_handler(event, context):
     pass
 
 
-def fetch_all_records(dataset_id, limit=1000):
+def fetch_all_records(dataset_id, limit=10):
     """
     Fetch all records from data.gov.sg API using pagination.
     
@@ -77,12 +77,27 @@ def fetch_all_records(dataset_id, limit=1000):
     }
     """
     all_records = []
-    offset = 0
-    limit = 5000
+    offset = '0'
+    limit = '5'
     
     while True:
-        api_url = 
+        # make api call with offset
+        url = "https://data.gov.sg/api/action/datastore_search?resource_id=" + dataset_id + "&offset=" + offset + "&limit=" + limit
+        response = requests.get(url)
+        # print(response.json())
+        output = response.json()
+        records = output['result']['records']
+        
+        if(len(records) == 0):
+            break
+        
+        all_records.extend(records)
+        offset += limit
+        print(f"Downloaded {len(all_records)} rows so far...")
+        time.sleep(0.5)
+    return all_records
 
+# print(fetch_all_records('d_ebc5ab87086db484f88045b47411ebc5'))
 
 def calculate_hash(data):
     """
