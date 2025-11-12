@@ -200,7 +200,14 @@ def should_process_dataset(dataset_name, current_hash):
     4. If different, return True
     5. If same, return False
     """
-    pass
+    last_hash = get_last_hash_from_s3(dataset_name)
+    if not last_hash:
+        return True
+    else:
+        if current_hash == last_hash:
+            return False
+        else:
+            return True
 
 
 def upload_to_s3(dataframe, dataset_name):
@@ -223,7 +230,20 @@ def upload_to_s3(dataframe, dataset_name):
     
     Hint: Use s3_client.put_object()
     """
-    pass
+    # convert dataframe to csv
+    csv_string = dataframe.to_csv(index=False)
+    
+    # add timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # buld s3 key
+    s3_key = f'{S3_METADATA_PREFIX}{dataset_name}_{timestamp}.csv'
+    
+    # upload csv to s3
+    s3_client.put_object(Bucket=S3_BUCKET,Key=s3_key,Body=csv_string)
+    
+    #return s3 key
+    return s3_key
 
 
 def process_dataset(dataset_info):
