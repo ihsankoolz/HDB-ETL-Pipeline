@@ -117,7 +117,16 @@ def calculate_hash(data):
     
     Hint: Use hashlib.md5()
     """
-    pass
+    # convert data to bytes if it is a string
+    if isinstance(data,str):
+        data = data.encode()
+    
+    # create md5 has object and update with data
+    hash_object = hashlib.md5(data)
+    
+    # return hexdigest (string representation of hash)
+    return hash_object.hexdigest()
+
 
 
 def get_last_hash_from_s3(dataset_name):
@@ -138,8 +147,19 @@ def get_last_hash_from_s3(dataset_name):
     
     Hint: Use s3_client.get_object() and handle exceptions
     """
-    pass
-
+    # build s3 key for metadata file
+    s3_key = f'{S3_METADATA_PREFIX}{dataset_name}_hash.txt'
+    
+    # getting object from s3
+    try:
+        response = s3_client.get_object(Bucket=S3_BUCKET,Key=s3_key)
+        
+        # read and return the hash from response body
+        hash_value = response['Body'].read().decode('utf-8')
+        return hash_value
+    except s3_client.exceptions.NoSuchKey:
+        # file doesnt exist
+        return None
 
 def save_hash_to_s3(dataset_name, hash_value):
     """
@@ -155,7 +175,11 @@ def save_hash_to_s3(dataset_name, hash_value):
     
     Hint: Use s3_client.put_object()
     """
-    pass
+    # build the s3 key for metadata file
+    s3_key = f'{S3_METADATA_PREFIX}{dataset_name}_hash.txt'
+    
+    # upload hash_value as a text file to S3
+    s3_client.put_object(Bucket=S3_BUCKET,Key=s3_key,Body=hash_value)
 
 
 def should_process_dataset(dataset_name, current_hash):
