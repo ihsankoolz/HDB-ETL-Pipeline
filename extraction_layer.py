@@ -38,10 +38,49 @@ def lambda_handler(event, context):
     3. For incremental dataset, always check for updates
     4. Return summary of what was processed
     """
-    pass
+    print("starting hdb resale data extraction...")
+    
+    results = []
+    
+    # process all the historical datasets
+    print("\nProcessing historical datasets")
+    for dataset_info in DATASETS['historical']:
+        result = process_dataset(dataset_info)
+        results.append(result)
+        print(f"{result['dataset']}: {result['status']}")
+        
+    # process all the incremental datasets
+    print("\nprocessing incremental datasets")
+    for dataset_info in DATASETS['incremental']:
+        result = process_dataset(dataset_info)
+        results.append(result)
+        print(f"{result['dataset']}: {result['status']}")
+        
+    # creating the summary
+    processed_count = sum(1 for r in results if r['status'] == 'processed')
+    skipped_count = sum(1 for r in results if r['status'] == 'skipped')
+    error_count = sum(1 for r in results if r ['status'] == 'error')
+    
+    summary = {
+        'statusCode' : 200,
+        'body' : {
+            'message': 'ETL pipeline completed',
+            'summary':{
+                'total_datasets': len(results),
+                'processed': processed_count,
+                'skipped': skipped_count,
+                'errors': error_count
+            },
+            'details': results
+        }
+    }
+    
+    print(f"\n Summary")
+    print(f'Total = {len(results)} | Processed: {processed_count} | Skipped: {skipped_count} | Errors: {error_count}')
+    return summary
 
 
-def fetch_all_records(dataset_id, limit=10):
+def fetch_all_records(dataset_id, limit=1000):
     """
     Fetch all records from data.gov.sg API using pagination.
     
@@ -78,7 +117,7 @@ def fetch_all_records(dataset_id, limit=10):
     """
     all_records = []
     offset = '0'
-    limit = '5'
+    limit = '1000'
     
     while True:
         # make api call with offset
@@ -237,7 +276,7 @@ def upload_to_s3(dataframe, dataset_name):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # buld s3 key
-    s3_key = f'{S3_METADATA_PREFIX}{dataset_name}_{timestamp}.csv'
+    s3_key = f'{S3_RAW_PREFIX}{dataset_name}_{timestamp}.csv'
     
     # upload csv to s3
     s3_client.put_object(Bucket=S3_BUCKET,Key=s3_key,Body=csv_string)
@@ -272,4 +311,36 @@ def process_dataset(dataset_info):
         a. Return skipped result
     9. Handle any exceptions and return error result
     """
-    pass
+    try:
+        dataset_name = dataset_info['name']
+        dataset_id = dataset_info['id']
+        
+        print(f'Processing dataset: {dataset_name}')
+        
+        records = fetch_all_records(dataset_id)
+        
+        df = pd.DataFrame(records)
+        
+        csv_data = df.to_csv(index=False)
+        current_hash = calculate_hash(csv_data)
+        
+        if should_process_dataset(dataset_name,current_hash):
+            s3_key = upload_to_s3(df,dataset_name)
+            save_hash_to_s3(dataset_name,current_hash)
+            return {
+                'dataset' :dataset_name,
+                'status' : 'processed',
+                'message' : f'Successfully uploaded to {s3_key}'
+            }
+        else:
+            return {
+                'dataset' : dataset_name,
+                'status' : 'skipped',
+                'message' : 'No changes detected'
+            }
+    except Exception as e:
+        return {
+            'dataset': dataset_name if 'dataset_name' in locals() else 'unknown',
+            'status': 'error',
+            'message': str(e)
+        }
