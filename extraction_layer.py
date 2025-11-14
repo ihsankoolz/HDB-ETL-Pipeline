@@ -59,7 +59,7 @@ def lambda_handler(event, context):
     # creating the summary
     processed_count = sum(1 for r in results if r['status'] == 'processed')
     skipped_count = sum(1 for r in results if r['status'] == 'skipped')
-    error_count = sum(1 for r in results if r ['status'] == 'error')
+    error_count = sum(1 for r in results if r['status'] == 'error')
     
     summary = {
         'statusCode' : 200,
@@ -116,12 +116,12 @@ def fetch_all_records(dataset_id, limit=1000):
     }
     """
     all_records = []
-    offset = '0'
-    limit = '1000'
+    offset = 0
+    limit = 1000
     
     while True:
         # make api call with offset
-        url = "https://data.gov.sg/api/action/datastore_search?resource_id=" + dataset_id + "&offset=" + offset + "&limit=" + limit
+        url = "https://data.gov.sg/api/action/datastore_search?resource_id=" + dataset_id + "&offset=" + str(offset) + "&limit=" + str(limit)
         response = requests.get(url)
         # print(response.json())
         output = response.json()
@@ -196,8 +196,9 @@ def get_last_hash_from_s3(dataset_name):
         # read and return the hash from response body
         hash_value = response['Body'].read().decode('utf-8')
         return hash_value
-    except s3_client.exceptions.NoSuchKey:
+    except Exception as e: #catching all exceptions
         # file doesnt exist
+        print(f"No existing hash found for {dataset_name} (first run)")
         return None
 
 def save_hash_to_s3(dataset_name, hash_value):
