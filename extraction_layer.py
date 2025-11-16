@@ -18,7 +18,7 @@ DATASETS = {
         {'name': '1990-1999', 'id': 'd_ebc5ab87086db484f88045b47411ebc5'},
         {'name': '2000-2012', 'id': 'd_43f493c6c50d54243cc1eab0df142d6a'},
         {'name': '2012-2014', 'id': 'd_2d5ff9ea31397b66239f245f57751537'},
-        {'name': '2015-2016', 'id': 'd_ea9ed51da2787afaf8e51f827c304208'},
+        {'name': '2015-2016', 'id': 'd_ea9ed51da2787afaf8e51f827c304208'}, 
     ],
     'incremental': [
         {'name': '2017-onwards', 'id': 'd_8b84c4ee58e3cfc0ece0d773c8ca6abc'}
@@ -38,34 +38,39 @@ def lambda_handler(event, context):
     3. For incremental dataset, always check for updates
     4. Return summary of what was processed
     """
-    print("starting hdb resale data extraction...")
+    print("Starting HDB resale data extraction...")
+    
+    # Check if we should process specific type
+    process_mode = event.get('mode', 'all')  # 'all', 'historical', or 'incremental'
     
     results = []
     
-    # process all the historical datasets
-    print("\nProcessing historical datasets")
-    for dataset_info in DATASETS['historical']:
-        result = process_dataset(dataset_info)
-        results.append(result)
-        print(f"{result['dataset']}: {result['status']}")
-        
-    # process all the incremental datasets
-    print("\nprocessing incremental datasets")
-    for dataset_info in DATASETS['incremental']:
-        result = process_dataset(dataset_info)
-        results.append(result)
-        print(f"{result['dataset']}: {result['status']}")
-        
-    # creating the summary
+    # Process based on mode
+    if process_mode in ['all', 'historical']:
+        print("\n=== Processing Historical Datasets ===")
+        for dataset_info in DATASETS['historical']:
+            result = process_dataset(dataset_info, dataset_type='historical')
+            results.append(result)
+            print(f"  {result['dataset']}: {result['status']}")
+    
+    if process_mode in ['all', 'incremental']:
+        print("\n=== Processing Incremental Datasets ===")
+        for dataset_info in DATASETS['incremental']:
+            result = process_dataset(dataset_info, dataset_type='incremental')
+            results.append(result)
+            print(f"  {result['dataset']}: {result['status']}")
+    
+    # Create summary
     processed_count = sum(1 for r in results if r['status'] == 'processed')
     skipped_count = sum(1 for r in results if r['status'] == 'skipped')
     error_count = sum(1 for r in results if r['status'] == 'error')
     
     summary = {
-        'statusCode' : 200,
-        'body' : {
-            'message': 'ETL pipeline completed',
-            'summary':{
+        'statusCode': 200,
+        'body': {
+            'message': f'ETL pipeline completed (mode: {process_mode})',
+            'summary': {
+                'mode': process_mode,
                 'total_datasets': len(results),
                 'processed': processed_count,
                 'skipped': skipped_count,
@@ -75,12 +80,14 @@ def lambda_handler(event, context):
         }
     }
     
-    print(f"\n Summary")
-    print(f'Total = {len(results)} | Processed: {processed_count} | Skipped: {skipped_count} | Errors: {error_count}')
+    print(f"\n=== Summary ===")
+    print(f"Mode: {process_mode}")
+    print(f"Total: {len(results)} | Processed: {processed_count} | Skipped: {skipped_count} | Errors: {error_count}")
+    
     return summary
 
 
-def fetch_all_records(dataset_id, limit=1000):
+def fetch_all_records(dataset_id, limit=15000):
     """
     Fetch all records from data.gov.sg API using pagination.
     
@@ -115,25 +122,104 @@ def fetch_all_records(dataset_id, limit=1000):
         }
     }
     """
+    # all_records = []
+    # offset = 0
+    # limit = 15000
+    
+    # while True:
+    #     # make api call with offset
+    #     url = "https://data.gov.sg/api/action/datastore_search?resource_id=" + dataset_id + "&offset=" + str(offset) + "&limit=" + str(limit)
+    #     response = requests.get(url)
+    #     # print(response.json())
+    #     output = response.json()
+    #     records = output['result']['records']
+        
+    #     if(len(records) == 0):
+    #         break
+        
+    #     all_records.extend(records)
+    #     offset += limit
+    #     print(f"Downloaded {len(all_records)} rows so far...")
+    #     time.sleep(0.1)
+    # return all_records
     all_records = []
     offset = 0
-    limit = 1000
+    limit = initial_limit
     
     while True:
-        # make api call with offset
-        url = "https://data.gov.sg/api/action/datastore_search?resource_id=" + dataset_id + "&offset=" + str(offset) + "&limit=" + str(limit)
-        response = requests.get(url)
-        # print(response.json())
-        output = response.json()
-        records = output['result']['records']
+        try:
+            # Build URL
+            url = f"{API_BASE_URL}?resource_id={dataset_id}&offset={offset}&limit={limit}"
+            
+            # Make API request with timeout
+            response = requests.get(url, timeout=30)
+            
+            # Check if request was successful
+            response.raise_for_status()
+            
+            # Parse JSON
+            output = response.json()
+            
+            # Validate response structure
+            if 'result' not in output or 'records' not in output['result']:
+                print(f"❌ Unexpected API response structure")
+                raise ValueError("Invalid API response structure")
+            
+            records = output['result']['records']
+            
+            # Check if we're done
+            if len(records) == 0:
+                print(f"✓ Download complete!")
+                break
+            
+            # Add to collection
+            all_records.extend(records)
+            offset += limit
+            print(f"Downloaded {len(all_records)} rows so far...")
+            
+            # Be nice to API
+            time.sleep(0.3)
+            
+        except requests.exceptions.HTTPError as e:
+            # Check if it's a "Payload Too Large" error
+            if e.response.status_code == 413:
+                # Reduce limit and retry
+                old_limit = limit
+                limit = max(1000, limit // 2)  # Cut in half, minimum 1000
+                
+                print(f"⚠️ Payload too large with limit={old_limit}")
+                print(f"↓ Reducing to limit={limit} and retrying...")
+                
+                if limit < 1000:
+                    print(f"❌ Limit too small, cannot proceed")
+                    raise
+                
+                # Don't increment offset - retry same batch with smaller limit
+                continue
+            else:
+                # Other HTTP error - fail
+                print(f"❌ API request failed at offset {offset}")
+                print(f"Status code: {e.response.status_code}")
+                print(f"Response: {e.response.text[:500]}")
+                raise
         
-        if(len(records) == 0):
-            break
-        
-        all_records.extend(records)
-        offset += limit
-        print(f"Downloaded {len(all_records)} rows so far...")
-        time.sleep(0.5)
+        except requests.exceptions.Timeout:
+            print(f"⚠️ Request timeout at offset {offset}")
+            print(f"Retrying in 5 seconds...")
+            time.sleep(5)
+            continue
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ API request failed at offset {offset}")
+            print(f"Error: {e}")
+            raise
+            
+        except Exception as e:
+            print(f"❌ Unexpected error at offset {offset}")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error: {e}")
+            raise
+    
     return all_records
 
 # print(fetch_all_records('d_ebc5ab87086db484f88045b47411ebc5'))
@@ -286,62 +372,118 @@ def upload_to_s3(dataframe, dataset_name):
     return s3_key
 
 
-def process_dataset(dataset_info):
+def check_if_already_downloaded(dataset_name, dataset_type='historical'):
+    """
+    Check if a historical dataset was already downloaded.
+    For historical datasets, we just check if ANY file exists in S3.
+    For incremental datasets, we use hash checking.
+    
+    Args:
+        dataset_name: Name of dataset
+        dataset_type: 'historical' or 'incremental'
+    
+    Returns:
+        True if already downloaded, False if needs download
+    """
+    if dataset_type == 'incremental':
+        # Incremental datasets need hash checking
+        return False  # Always check hash for incremental
+    
+    # For historical: check if any file exists with this dataset name
+    try:
+        s3_key_prefix = f'{S3_RAW_PREFIX}{dataset_name}_'
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=s3_key_prefix,
+            MaxKeys=1  # Just need to know if ANY file exists
+        )
+        
+        if 'Contents' in response and len(response['Contents']) > 0:
+            print(f"  ✓ Historical dataset already exists in S3")
+            return True
+        else:
+            print(f"  ✗ Historical dataset not found, will download")
+            return False
+            
+    except Exception as e:
+        print(f"  Error checking S3: {e}")
+        return False  # If error, try to download
+
+
+def process_dataset(dataset_info, dataset_type='historical'):
     """
     Process a single dataset: fetch, check hash, upload if changed.
+    For historical datasets, skip if already in S3.
     
     Args:
         dataset_info: Dictionary with 'name' and 'id' keys
+        dataset_type: 'historical' or 'incremental'
     
     Returns:
-        Dictionary with processing result:
-        {'dataset': name, 'status': 'processed'/'skipped'/'error', 'message': '...'}
-    
-    TODO:
-    1. Extract dataset name and ID
-    2. Log processing start
-    3. Fetch all records using fetch_all_records()
-    4. Convert records to DataFrame
-    5. Calculate hash of the data
-    6. Check if should process using should_process_dataset()
-    7. If should process:
-        a. Upload to S3
-        b. Save new hash
-        c. Return success result
-    8. If should skip:
-        a. Return skipped result
-    9. Handle any exceptions and return error result
+        Dictionary with processing result
     """
+    dataset_name = None  # Initialize here so we can use in except block
+    
     try:
         dataset_name = dataset_info['name']
         dataset_id = dataset_info['id']
         
-        print(f'Processing dataset: {dataset_name}')
+        print(f'Processing dataset: {dataset_name} (type: {dataset_type})')
         
+        # Smart skip for historical datasets
+        if dataset_type == 'historical':
+            if check_if_already_downloaded(dataset_name, dataset_type):
+                return {
+                    'dataset': dataset_name,
+                    'status': 'skipped',
+                    'message': 'Historical dataset already exists in S3'
+                }
+        
+        # Download records
+        print(f"Fetching records from API...")
         records = fetch_all_records(dataset_id)
+        print(f"✓ Downloaded {len(records)} records")
         
+        # Convert to DataFrame
         df = pd.DataFrame(records)
         
+        # Calculate hash
         csv_data = df.to_csv(index=False)
         current_hash = calculate_hash(csv_data)
+        print(f"✓ Hash calculated: {current_hash[:16]}...")
         
-        if should_process_dataset(dataset_name,current_hash):
-            s3_key = upload_to_s3(df,dataset_name)
-            save_hash_to_s3(dataset_name,current_hash)
-            return {
-                'dataset' :dataset_name,
-                'status' : 'processed',
-                'message' : f'Successfully uploaded to {s3_key}'
-            }
-        else:
-            return {
-                'dataset' : dataset_name,
-                'status' : 'skipped',
-                'message' : 'No changes detected'
-            }
-    except Exception as e:
+        # For incremental datasets, check if data changed
+        if dataset_type == 'incremental':
+            if not should_process_dataset(dataset_name, current_hash):
+                return {
+                    'dataset': dataset_name,
+                    'status': 'skipped',
+                    'message': 'No changes detected (hash match)'
+                }
+        
+        # Upload to S3
+        print(f"Uploading to S3...")
+        s3_key = upload_to_s3(df, dataset_name)
+        save_hash_to_s3(dataset_name, current_hash)
+        
         return {
-            'dataset': dataset_name if 'dataset_name' in locals() else 'unknown',
+            'dataset': dataset_name,
+            'status': 'processed',
+            'message': f'Successfully uploaded {len(records)} rows to {s3_key}',
+            'rows': len(records)
+        }
+        
+    except Exception as e:
+        # Better error logging
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ ERROR processing {dataset_name}:")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        print(f"Full traceback:\n{error_details}")
+        
+        return {
+            'dataset': dataset_name if dataset_name else 'unknown',
             'status': 'error',
-            'message': str(e)
+            'message': f'{type(e).__name__}: {str(e)}'
         }
