@@ -545,14 +545,14 @@ def validate_hdb_data(df):
 
     # Create validation masks (True = valid, False = invalid) Each mask checks ONE rule
 
-    # 1. Resale price range: $50,000 - $2,500,000
-    valid_price = (df['resale_price'] >= 50000) & (df['resale_price'] <= 2500000)
+    # 1. Resale price range: $10,000 - $2,500,000
+    valid_price = (df['resale_price'] >= 10000) & (df['resale_price'] <= 2500000)
 
-    # 2. Floor area range: 20 - 400 sqm
-    valid_area = (df['floor_area_sqm'] >= 20) & (df['floor_area_sqm'] <= 400)
+    # 2. Floor area range: 20 - 600 sqm
+    valid_area = (df['floor_area_sqm'] >= 20) & (df['floor_area_sqm'] <= 600)
 
-    # 3. Price per sqm: $1,000 - $20,000
-    valid_price_per_sqm = (df['price_per_sqm_temp'] >= 1000) & (df['price_per_sqm_temp'] <= 20000)
+    # 3. Price per sqm: $5000 - $20,000
+    valid_price_per_sqm = (df['price_per_sqm_temp'] >= 500) & (df['price_per_sqm_temp'] <= 20000)
 
     # 4. Lease commence date: 1960 - current year
     valid_lease_date = (df['lease_commence_date'] >= 1960) & (df['lease_commence_date'] <= current_year)
