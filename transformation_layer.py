@@ -896,6 +896,7 @@ def generate_quality_metrics(df_original, df_final, duplicates_removed,
     data_quality_score = (final_rows / original_rows * 100) if original_rows > 0 else 0
 
     # 3. Calculate value ranges for numeric fields
+    # CRITICAL: Convert numpy/pandas types to native Python types
     value_ranges = {
         'resale_price': {
             'min': int(df_final['resale_price'].min()),
@@ -914,22 +915,25 @@ def generate_quality_metrics(df_original, df_final, duplicates_removed,
         }
     }
 
-    # 4. Build quality metrics dictionary
+    # 4. Convert null_counts dictionary values to native Python int
+    # This is the KEY fix - pandas Series.sum() returns int64
+    null_counts_clean = {k: int(v) for k, v in null_counts.items()}
+
+    # 5. Build quality metrics dictionary
     quality_metrics = {
-        'original_rows': original_rows,
-        'final_rows': final_rows,
-        'total_removed': total_removed,
-        'duplicates_removed': duplicates_removed,
-        'nulls_removed': nulls_removed,
-        'invalid_removed': invalid_removed,
-        'data_quality_score': round(data_quality_score, 2),
-        'null_counts': null_counts,
+        'original_rows': int(original_rows),           # Convert to Python int
+        'final_rows': int(final_rows),                 # Convert to Python int
+        'total_removed': int(total_removed),           # Convert to Python int
+        'duplicates_removed': int(duplicates_removed), # Convert to Python int
+        'nulls_removed': int(nulls_removed),           # Convert to Python int
+        'invalid_removed': int(invalid_removed),       # Convert to Python int
+        'data_quality_score': float(round(data_quality_score, 2)),  # Convert to Python float
+        'null_counts': null_counts_clean,              # Use cleaned dict
         'value_ranges': value_ranges,
         'processed_at': datetime.now().isoformat()
     }
 
     return quality_metrics
-
 
 # ============================================
 # S3 OPERATIONS
