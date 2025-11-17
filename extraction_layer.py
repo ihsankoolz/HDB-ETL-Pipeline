@@ -144,7 +144,7 @@ def fetch_all_records(dataset_id, limit=15000):
     # return all_records
     all_records = []
     offset = 0
-    limit = initial_limit
+    initial_limit = limit  # Store the initial limit value
     
     while True:
         try:
